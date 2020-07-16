@@ -290,7 +290,7 @@ bool JointTrajectoryController<SegmentImpl, HardwareInterface>::init(HardwareInt
   trajectory_command_sub_ = controller_nh_.subscribe("command", 1, &JointTrajectoryController::trajectoryCommandCB, this);
 
   // ROS API: Published topics
-  state_publisher_.reset(new StatePublisher(controller_nh_, "state", 1));
+  state_publisher_ = controller_nh_.advertise<control_msgs::JointTrajectoryControllerState>("state", 1);
 
   // ROS API: Action interface
   action_server_.reset(new ActionServer(controller_nh_, "follow_joint_trajectory",
@@ -327,16 +327,16 @@ bool JointTrajectoryController<SegmentImpl, HardwareInterface>::init(HardwareInt
   }
 
   {
-    state_publisher_->lock();
-    state_publisher_->msg_.joint_names = joint_names_;
-    state_publisher_->msg_.desired.positions.resize(n_joints);
-    state_publisher_->msg_.desired.velocities.resize(n_joints);
-    state_publisher_->msg_.desired.accelerations.resize(n_joints);
-    state_publisher_->msg_.actual.positions.resize(n_joints);
-    state_publisher_->msg_.actual.velocities.resize(n_joints);
-    state_publisher_->msg_.error.positions.resize(n_joints);
-    state_publisher_->msg_.error.velocities.resize(n_joints);
-    state_publisher_->unlock();
+    control_msgs::JointTrajectoryControllerState msg_;
+    msg_.joint_names = joint_names_;
+    msg_.desired.positions.resize(n_joints);
+    msg_.desired.velocities.resize(n_joints);
+    msg_.desired.accelerations.resize(n_joints);
+    msg_.actual.positions.resize(n_joints);
+    msg_.actual.velocities.resize(n_joints);
+    msg_.error.positions.resize(n_joints);
+    msg_.error.velocities.resize(n_joints);
+    state_publisher_.publish(msg_);
   }
 
   return true;
@@ -700,25 +700,17 @@ template <class SegmentImpl, class HardwareInterface>
 void JointTrajectoryController<SegmentImpl, HardwareInterface>::
 publishState(const ros::Time& time)
 {
-  // Check if it's time to publish
-  if (!state_publisher_period_.isZero() && last_state_publish_time_ + state_publisher_period_ < time)
-  {
-    if (state_publisher_ && state_publisher_->trylock())
-    {
-      last_state_publish_time_ += state_publisher_period_;
+  control_msgs::JointTrajectoryControllerState msg_;
+  msg_.header.stamp          = time_data_.readFromRT()->time;
+  msg_.desired.positions     = desired_state_.position;
+  msg_.desired.velocities    = desired_state_.velocity;
+  msg_.desired.accelerations = desired_state_.acceleration;
+  msg_.actual.positions      = current_state_.position;
+  msg_.actual.velocities     = current_state_.velocity;
+  msg_.error.positions       = state_error_.position;
+  msg_.error.velocities      = state_error_.velocity;
 
-      state_publisher_->msg_.header.stamp          = time_data_.readFromRT()->time;
-      state_publisher_->msg_.desired.positions     = desired_state_.position;
-      state_publisher_->msg_.desired.velocities    = desired_state_.velocity;
-      state_publisher_->msg_.desired.accelerations = desired_state_.acceleration;
-      state_publisher_->msg_.actual.positions      = current_state_.position;
-      state_publisher_->msg_.actual.velocities     = current_state_.velocity;
-      state_publisher_->msg_.error.positions       = state_error_.position;
-      state_publisher_->msg_.error.velocities      = state_error_.velocity;
-
-      state_publisher_->unlockAndPublish();
-    }
-  }
+  state_publisher_.publish(msg_);
 }
 
 template <class SegmentImpl, class HardwareInterface>
